@@ -218,7 +218,19 @@ class OutParser(MappingTextParser):
 
     def _get_cartesian_system(self, source: dict[str, Any]) -> tuple[list[str], Any]:
         single_point = self._navigate(source, 'single_point')
-        coordinates = single_point.get('cartesian_coordinates', [])
+        if single_point:
+            coordinates = single_point.get('cartesian_coordinates', [])
+        else:
+            geometry_optimization = self._navigate(source, 'geometry_optimization')
+# TODO:xe lets try to first use the first coordinates from the optimization file
+            #from pprint import pprint
+            #pprint(geometry_optimization)
+            cycles = geometry_optimization.get('cycle', [])
+            if len(cycles)>0:
+                coordinates = cycles[0].get('cartesian_coordinates', [])
+            else:
+                coordinates = None
+
         return str_to_cartesian_coordinates(coordinates) if coordinates else ([], None)
 
     def _get_charge_and_multiplicity(self, source: dict[str, Any]) -> dict[str, int]:
