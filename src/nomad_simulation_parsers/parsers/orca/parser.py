@@ -216,30 +216,13 @@ class OutParser(MappingTextParser):
             return value[0] if value else None
         return value
 
-    def _get_cartesian_systems(self, source: dict[str, Any]) -> list[tuple[list[str], Any]]:
-        single_point = self._navigate(source, 'single_point')
-        if single_point:
-            coordinates = single_point.get('cartesian_coordinates', [])
-            if coordinates:
-                coordinates = [coordinates]
-            else:
-                return []
-        else:
-            geometry_optimization = self._navigate(source, 'geometry_optimization')
-            cycles = geometry_optimization.get('cycle', [])
-            if len(cycles)>0:
-                coordinates = [cycle.get('cartesian_coordinates', []) for cycle in cycles]
-            else:
-                return []
-
-        return [
-            str_to_cartesian_coordinates(coord) if coord else [[], None]
-            for coord in coordinates
-            ]
+    def _get_cartesian_system(self, source: dict[str, Any]) -> tuple[list[str], Any]:
+        coordinates = source.get('cartesian_coordinates', [])
+        return str_to_cartesian_coordinates(coordinates) if coordinates else []
 
     def _get_charge_and_multiplicity(self, source: dict[str, Any]) -> dict[str, int]:
         scf_settings = self._navigate(
-            source, 'single_point', 'self_consistent', 'scf_settings'
+            source, 'self_consistent', 'scf_settings'
         )
         result = {}
         total_charge = self._to_scalar(scf_settings.get('total_charge'))
@@ -250,9 +233,25 @@ class OutParser(MappingTextParser):
             result['total_spin_multiplicity'] = int(multiplicity)
         return result
 
+    def _get_systems(self, source: dict[str, Any]) -> list[tuple[list[str], Any]]:
+        single_point = self._navigate(source, 'single_point')
+        if single_point:
+            coordinates = self._get_cartesian_system(single_point)
+            charge_mult = self._get_charge_and_multiplicity(single_point)
+            return [(*coordinates, charge_mult)] if (coordinates or charge_mult) else []
+        else:
+            geometry_optimization = self._navigate(source, 'geometry_optimization')
+            final = self._navigate(geometry_optimization, 'final_energy_evaluation')  # TODO:xe what to do with it?
+            charge_mult = self._get_charge_and_multiplicity(final)  # TODO:xe empty for Orca 6, filled for Orca 4
+            cycles = geometry_optimization.get('cycle', [])
+            if len(cycles)==0:
+                return []
+            return [(*coordinates, charge_mult) if (coordinates:=self._get_cartesian_system(cycle)) else ([], None, {}) for cycle in cycles]
+
     def get_atoms(self, src: dict[str, Any]) -> list[dict[str, Any]]:
-        symbols_positions = self._get_cartesian_systems(src)
-        if not symbols_positions:
+        systems = self._get_systems(src)
+
+        if not systems:
             return []
 
         atoms = [
@@ -262,9 +261,9 @@ class OutParser(MappingTextParser):
                 'particle_states': [
                     {'chemical_symbol': symbol} for symbol in symbols
                 ],
-                **self._get_charge_and_multiplicity(src),
+                **spin_mult,
             }
-            for symbols, positions in symbols_positions
+            for symbols, positions, spin_mult in systems
         ]
 
         # set the last valid structure representative, otherwise 1st
