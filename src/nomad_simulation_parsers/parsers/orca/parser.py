@@ -17,7 +17,12 @@ from nomad_simulations.schema_packages.model_method import (
     OrbitalLocalization,
     PerturbationMethod,
 )
-from nomad_simulations.schema_packages.workflow.general import SerialWorkflow
+from nomad_simulations.schema_packages.workflow.general import SerialWorkflow, SimulationWorkflow
+
+from nomad_simulations.schema_packages.workflow.geometry_optimization import (
+    GeometryOptimization,
+    GeometryOptimizationMethod,
+)
 
 from nomad_simulation_parsers.schema_packages import orca
 
@@ -772,7 +777,15 @@ class OutParser(MappingTextParser):
 
     def build_workflow(
         self, archive: 'EntryArchive', logger: 'BoundLogger'
-    ) -> SerialWorkflow | None:
+    ) -> SimulationWorkflow | None:
+
+        if self.text_parser.geometry_optimization:
+            workflow = GeometryOptimization()
+            workflow.method = GeometryOptimizationMethod()
+            archive.workflow2 = workflow
+            archive.workflow2.normalize(archive, logger)
+            return archive.workflow2
+
         simulation = archive.data
         methods = simulation.model_method or []
         if not any(isinstance(method, HF) for method in methods) or not any(
